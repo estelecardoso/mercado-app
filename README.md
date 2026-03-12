@@ -20,5 +20,3 @@ Aplicação full stack para cadastro, edição, exclusão e busca de clientes.
 - Validação de nome (somente letras)
 - Registro automático de data de cadastro
 
-## Estrutura do projeto
-
