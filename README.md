@@ -1,6 +1,6 @@
 # Sistema de Cadastros para Mercados
 
-Aplicação full stack para cadastro, edição, exclusão e busca de clientes.
+Aplicação full stack para cadastro, edição, exclusão e busca.
 
 ## Tecnologias utilizadas
 
