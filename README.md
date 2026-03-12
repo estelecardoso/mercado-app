@@ -1,4 +1,4 @@
-# Sistema de Cadastro de Clientes
+# Sistema de Cadastros para Mercados
 
 Aplicação full stack para cadastro, edição, exclusão e busca de clientes.
 
