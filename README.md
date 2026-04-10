@@ -1,6 +1,6 @@
-# Sistema de Cadastro de Clientes
+# Sistema de Cadastros para Mercados
 
-Aplicação full stack para cadastro, edição, exclusão e busca de clientes.
+Aplicação full stack para cadastro, edição, exclusão e busca.
 
 ## Tecnologias utilizadas
 
@@ -19,6 +19,4 @@ Aplicação full stack para cadastro, edição, exclusão e busca de clientes.
 - Validação de e-mail
 - Validação de nome (somente letras)
 - Registro automático de data de cadastro
-
-## Estrutura do projeto
 
