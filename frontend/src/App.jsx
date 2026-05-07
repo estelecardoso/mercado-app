@@ -4,8 +4,11 @@ const API = "http://localhost:3001";
 
 function formatDatePtBr(iso) {
   if (!iso) return "-";
+
   const d = new Date(iso);
+
   if (Number.isNaN(d.getTime())) return "-";
+
   return d.toLocaleString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
@@ -15,12 +18,64 @@ function formatDatePtBr(iso) {
   });
 }
 
+function formatMoneyPtBr(value) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) return "R$ 0,00";
+
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function formatStock(value, unitMeasure) {
+  const n = Number(value);
+  const unit = unitMeasure || "UN";
+
+  if (!Number.isFinite(n)) {
+    return `0 ${unit}`;
+  }
+
+  if (unit === "KG") {
+    return `${n.toLocaleString("pt-BR", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 3,
+    })} KG`;
+  }
+
+  return `${Math.trunc(n)} UN`;
+}
+
 function isValidEmail(email) {
   return /^\S+@\S+\.\S+$/.test(email);
 }
 
 function isValidName(name) {
   return /^[A-Za-zÀ-ÖØ-öø-ÿ\s]+$/.test(name);
+}
+
+function cleanEan13(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function isValidEan13(value) {
+  const ean = cleanEan13(value);
+
+  if (!/^\d{13}$/.test(ean)) {
+    return false;
+  }
+
+  const digits = ean.split("").map(Number);
+  const checkDigit = digits[12];
+
+  const sum = digits.slice(0, 12).reduce((acc, digit, index) => {
+    return acc + digit * (index % 2 === 0 ? 1 : 3);
+  }, 0);
+
+  const calculatedCheckDigit = (10 - (sum % 10)) % 10;
+
+  return checkDigit === calculatedCheckDigit;
 }
 
 function normalizeText(value) {
@@ -49,17 +104,28 @@ export default function App() {
     password: "",
   });
 
-  const [form, setForm] = useState({
+  const [clientForm, setClientForm] = useState({
     id: null,
     name: "",
     email: "",
     phone: "",
   });
 
+  const [productForm, setProductForm] = useState({
+    id: null,
+    ean13: "",
+    name: "",
+    description: "",
+    price: "",
+    quantity: "",
+    unit_measure: "UN",
+  });
+
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
+  const [products, setProducts] = useState([]);
 
-  const [msg, setMsg] = useState({
+  const [clientMsg, setClientMsg] = useState({
     type: "info",
     text: "",
   });
@@ -69,9 +135,15 @@ export default function App() {
     text: "",
   });
 
+  const [productMsg, setProductMsg] = useState({
+    type: "info",
+    text: "",
+  });
+
   const [loginMsg, setLoginMsg] = useState("");
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
+  const [clientQuery, setClientQuery] = useState("");
+  const [productQuery, setProductQuery] = useState("");
   const [screenWidth, setScreenWidth] = useState(window.innerWidth);
 
   useEffect(() => {
@@ -80,6 +152,7 @@ export default function App() {
     }
 
     window.addEventListener("resize", handleResize);
+
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
@@ -88,9 +161,13 @@ export default function App() {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const res = await fetch(url, { ...options, signal: controller.signal });
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
 
       let data = null;
+
       try {
         data = await res.json();
       } catch {
@@ -111,6 +188,7 @@ export default function App() {
       if (e?.name === "AbortError") {
         throw new Error("Tempo limite da requisição excedido. Tente novamente.");
       }
+
       throw e;
     } finally {
       clearTimeout(timer);
@@ -119,6 +197,7 @@ export default function App() {
 
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
+
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
@@ -128,6 +207,7 @@ export default function App() {
     if (user) {
       loadClients();
       loadUsers();
+      loadProducts();
     }
   }, [user]);
 
@@ -136,7 +216,7 @@ export default function App() {
       const data = await apiJson(`${API}/clients`);
       setClients(Array.isArray(data) ? data : []);
     } catch (e) {
-      setMsg({
+      setClientMsg({
         type: "error",
         text: e.message || "Erro ao carregar clientes.",
       });
@@ -155,6 +235,18 @@ export default function App() {
     }
   }
 
+  async function loadProducts() {
+    try {
+      const data = await apiJson(`${API}/products`);
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setProductMsg({
+        type: "error",
+        text: e.message || "Erro ao carregar produtos.",
+      });
+    }
+  }
+
   function setLoginField(name, value) {
     setLoginForm((prev) => ({
       ...prev,
@@ -169,21 +261,29 @@ export default function App() {
     }));
   }
 
-  function setField(name, value) {
-    setForm((prev) => ({
+  function setClientField(name, value) {
+    setClientForm((prev) => ({
       ...prev,
       [name]: value,
     }));
   }
 
-  function clearForm() {
-    setForm({
+  function setProductField(name, value) {
+    setProductForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+
+  function clearClientForm() {
+    setClientForm({
       id: null,
       name: "",
       email: "",
       phone: "",
     });
-    setMsg({
+
+    setClientMsg({
       type: "info",
       text: "",
     });
@@ -196,22 +296,41 @@ export default function App() {
       email: "",
       password: "",
     });
+
     setUserMsg({
       type: "info",
       text: "",
     });
   }
 
-  function startEdit(client) {
+  function clearProductForm() {
+    setProductForm({
+      id: null,
+      ean13: "",
+      name: "",
+      description: "",
+      price: "",
+      quantity: "",
+      unit_measure: "UN",
+    });
+
+    setProductMsg({
+      type: "info",
+      text: "",
+    });
+  }
+
+  function startEditClient(client) {
     setActiveTab("clients");
-    setForm({
+
+    setClientForm({
       id: client.id,
       name: client.name || "",
       email: client.email || "",
       phone: client.phone || "",
     });
 
-    setMsg({
+    setClientMsg({
       type: "info",
       text: "Editando cliente. Altere os campos e clique em Salvar alterações.",
     });
@@ -224,21 +343,52 @@ export default function App() {
 
   function startEditUser(item) {
     setActiveTab("users");
+
     setUserForm({
       id: item.id,
       name: item.name || "",
       email: item.email || "",
       password: "",
     });
+
     setUserMsg({
       type: "info",
       text: "Editando usuário. Preencha a senha só se quiser alterá-la.",
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  function startEditProduct(product) {
+    setActiveTab("products");
+
+    setProductForm({
+      id: product.id,
+      ean13: product.ean13 || "",
+      name: product.name || "",
+      description: product.description || "",
+      price: product.price || "",
+      quantity: product.quantity ?? "",
+      unit_measure: product.unit_measure || "UN",
+    });
+
+    setProductMsg({
+      type: "info",
+      text: "Editando produto. Altere os campos e clique em Salvar alterações.",
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   async function handleLogin(e) {
     e.preventDefault();
+
     if (loading) return;
 
     const email = loginForm.email.trim().toLowerCase();
@@ -263,7 +413,10 @@ export default function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+        }),
       });
 
       setUser(data);
@@ -282,6 +435,7 @@ export default function App() {
 
   async function handleSaveUser(e) {
     e.preventDefault();
+
     if (loading) return;
 
     const name = userForm.name.trim();
@@ -289,12 +443,18 @@ export default function App() {
     const password = userForm.password.trim();
 
     if (!name || !email) {
-      setUserMsg({ type: "error", text: "Preencha nome e e-mail." });
+      setUserMsg({
+        type: "error",
+        text: "Preencha nome e e-mail.",
+      });
       return;
     }
 
     if (!isValidName(name)) {
-      setUserMsg({ type: "error", text: "O nome deve conter apenas letras." });
+      setUserMsg({
+        type: "error",
+        text: "O nome deve conter apenas letras.",
+      });
       return;
     }
 
@@ -323,7 +483,11 @@ export default function App() {
     }
 
     setLoading(true);
-    setUserMsg({ type: "info", text: "" });
+
+    setUserMsg({
+      type: "info",
+      text: "",
+    });
 
     try {
       if (userForm.id) {
@@ -376,42 +540,68 @@ export default function App() {
 
   function handleLogout() {
     localStorage.removeItem("user");
+
     setUser(null);
     setClients([]);
     setUsers([]);
+    setProducts([]);
     setActiveTab("clients");
     setMenuOpen(false);
-    setForm({
+
+    setClientForm({
       id: null,
       name: "",
       email: "",
       phone: "",
     });
+
     setUserForm({
       id: null,
       name: "",
       email: "",
       password: "",
     });
-    setMsg({
+
+    setProductForm({
+      id: null,
+      ean13: "",
+      name: "",
+      description: "",
+      price: "",
+      quantity: "",
+      unit_measure: "UN",
+    });
+
+    setClientMsg({
       type: "info",
       text: "",
     });
+
     setUserMsg({
       type: "info",
       text: "",
     });
+
+    setProductMsg({
+      type: "info",
+      text: "",
+    });
+
+    setClientQuery("");
+    setProductQuery("");
     setLoginMsg("");
   }
 
-  async function onDelete(id) {
+  async function onDeleteClient(id) {
     if (loading) return;
 
     const ok = confirm("Tem certeza que deseja excluir este cliente?");
+
     if (!ok) return;
 
     setLoading(true);
-    setMsg({
+
+    setClientMsg({
       type: "info",
       text: "",
     });
@@ -421,18 +611,18 @@ export default function App() {
         method: "DELETE",
       });
 
-      setMsg({
+      setClientMsg({
         type: "success",
         text: "Cliente excluído com sucesso!",
       });
 
-      if (form.id === id) {
-        clearForm();
+      if (clientForm.id === id) {
+        clearClientForm();
       }
 
       await loadClients();
     } catch (e) {
-      setMsg({
+      setClientMsg({
         type: "error",
         text: e.message || "Erro ao excluir.",
       });
@@ -445,10 +635,15 @@ export default function App() {
     if (loading) return;
 
     const ok = confirm("Tem certeza que deseja excluir este usuário?");
+
     if (!ok) return;
 
     setLoading(true);
-    setUserMsg({ type: "info", text: "" });
+
+    setUserMsg({
+      type: "info",
+      text: "",
+    });
 
     try {
       await apiJson(`${API}/users/${id}`, {
@@ -478,21 +673,64 @@ export default function App() {
     }
   }
 
-  async function onSubmit(e) {
-    e.preventDefault();
+  async function onDeleteProduct(id) {
     if (loading) return;
 
-    const name = form.name.trim();
-    const email = form.email.trim().toLowerCase();
-    const phone = form.phone ? form.phone.replace(/\D/g, "") : "";
+    const ok = confirm("Tem certeza que deseja excluir este produto?");
+
+    if (!ok) return;
+
+    setLoading(true);
+
+    setProductMsg({
+      type: "info",
+      text: "",
+    });
+
+    try {
+      await apiJson(`${API}/products/${id}`, {
+        method: "DELETE",
+      });
+
+      setProductMsg({
+        type: "success",
+        text: "Produto excluído com sucesso!",
+      });
+
+      if (productForm.id === id) {
+        clearProductForm();
+      }
+
+      await loadProducts();
+    } catch (e) {
+      setProductMsg({
+        type: "error",
+        text: e.message || "Erro ao excluir produto.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onSubmitClient(e) {
+    e.preventDefault();
+
+    if (loading) return;
+
+    const name = clientForm.name.trim();
+    const email = clientForm.email.trim().toLowerCase();
+    const phone = clientForm.phone ? clientForm.phone.replace(/\D/g, "") : "";
 
     if (!name) {
-      setMsg({ type: "error", text: "Digite o nome." });
+      setClientMsg({
+        type: "error",
+        text: "Digite o nome.",
+      });
       return;
     }
 
     if (!isValidName(name)) {
-      setMsg({
+      setClientMsg({
         type: "error",
         text: "O nome deve conter apenas letras.",
       });
@@ -500,12 +738,15 @@ export default function App() {
     }
 
     if (!email) {
-      setMsg({ type: "error", text: "Digite o e-mail." });
+      setClientMsg({
+        type: "error",
+        text: "Digite o e-mail.",
+      });
       return;
     }
 
     if (!isValidEmail(email)) {
-      setMsg({
+      setClientMsg({
         type: "error",
         text: "Digite um e-mail válido, exemplo exemplo@dominio.com",
       });
@@ -513,7 +754,7 @@ export default function App() {
     }
 
     if (phone && !(phone.length === 10 || phone.length === 11)) {
-      setMsg({
+      setClientMsg({
         type: "error",
         text: "Telefone deve ter 10 ou 11 dígitos.",
       });
@@ -521,14 +762,15 @@ export default function App() {
     }
 
     setLoading(true);
-    setMsg({
+
+    setClientMsg({
       type: "info",
       text: "",
     });
 
     try {
-      if (form.id) {
-        await apiJson(`${API}/clients/${form.id}`, {
+      if (clientForm.id) {
+        await apiJson(`${API}/clients/${clientForm.id}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -540,7 +782,7 @@ export default function App() {
           }),
         });
 
-        setMsg({
+        setClientMsg({
           type: "success",
           text: "Alterações salvas com sucesso!",
         });
@@ -557,16 +799,16 @@ export default function App() {
           }),
         });
 
-        setMsg({
+        setClientMsg({
           type: "success",
           text: "Cliente cadastrado com sucesso!",
         });
       }
 
-      clearForm();
+      clearClientForm();
       await loadClients();
     } catch (e) {
-      setMsg({
+      setClientMsg({
         type: "error",
         text: e.message || "Erro ao salvar.",
       });
@@ -575,8 +817,139 @@ export default function App() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const q = normalizeText(query);
+  async function onSubmitProduct(e) {
+    e.preventDefault();
+
+    if (loading) return;
+
+    const ean13 = cleanEan13(productForm.ean13);
+    const name = productForm.name.trim();
+    const description = productForm.description.trim();
+    const price = Number(productForm.price);
+    const quantity = Number(productForm.quantity);
+    const unit_measure = productForm.unit_measure || "UN";
+
+    if (!ean13) {
+      setProductMsg({
+        type: "error",
+        text: "Digite o código EAN-13 do produto.",
+      });
+      return;
+    }
+
+    if (!isValidEan13(ean13)) {
+      setProductMsg({
+        type: "error",
+        text: "O código EAN-13 deve conter 13 dígitos válidos.",
+      });
+      return;
+    }
+
+    if (!name) {
+      setProductMsg({
+        type: "error",
+        text: "Digite o nome do produto.",
+      });
+      return;
+    }
+
+    if (name.length < 2) {
+      setProductMsg({
+        type: "error",
+        text: "O nome do produto deve ter pelo menos 2 caracteres.",
+      });
+      return;
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      setProductMsg({
+        type: "error",
+        text: "O preço deve ser um número maior ou igual a zero.",
+      });
+      return;
+    }
+
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setProductMsg({
+        type: "error",
+        text: "A quantidade em estoque deve ser maior ou igual a zero.",
+      });
+      return;
+    }
+
+    if (unit_measure === "UN" && !Number.isInteger(quantity)) {
+      setProductMsg({
+        type: "error",
+        text: "Para UN, a quantidade precisa ser um número inteiro.",
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    setProductMsg({
+      type: "info",
+      text: "",
+    });
+
+    try {
+      if (productForm.id) {
+        await apiJson(`${API}/products/${productForm.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ean13,
+            name,
+            description,
+            price,
+            quantity,
+            unit_measure,
+          }),
+        });
+
+        setProductMsg({
+          type: "success",
+          text: "Alterações salvas com sucesso!",
+        });
+      } else {
+        await apiJson(`${API}/products`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ean13,
+            name,
+            description,
+            price,
+            quantity,
+            unit_measure,
+          }),
+        });
+
+        setProductMsg({
+          type: "success",
+          text: "Produto cadastrado com sucesso!",
+        });
+      }
+
+      clearProductForm();
+      await loadProducts();
+    } catch (e) {
+      setProductMsg({
+        type: "error",
+        text: e.message || "Erro ao salvar produto.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredClients = useMemo(() => {
+    const q = normalizeText(clientQuery);
+
     if (!q) return clients;
 
     const terms = q.split(/\s+/).filter(Boolean);
@@ -588,9 +961,28 @@ export default function App() {
 
       return terms.every((term) => searchable.includes(term));
     });
-  }, [clients, query]);
+  }, [clients, clientQuery]);
 
-  const isEditing = Boolean(form.id);
+  const filteredProducts = useMemo(() => {
+    const q = normalizeText(productQuery);
+
+    if (!q) return products;
+
+    const terms = q.split(/\s+/).filter(Boolean);
+
+    return products.filter((p) => {
+      const searchable = normalizeText(
+        `${p.ean13 || ""} ${p.name || ""} ${p.description || ""} ${
+          p.price || ""
+        } ${p.quantity || ""} ${p.unit_measure || ""}`
+      );
+
+      return terms.every((term) => searchable.includes(term));
+    });
+  }, [products, productQuery]);
+
+  const isEditingClient = Boolean(clientForm.id);
+  const isEditingProduct = Boolean(productForm.id);
 
   const loginPage = {
     minHeight: "100vh",
@@ -661,22 +1053,18 @@ export default function App() {
       clients: {
         activeBg: "rgba(186, 230, 253, .55)",
         activeBorder: "rgba(56, 189, 248, .28)",
-        iconBg: "rgba(125, 211, 252, .35)",
       },
       users: {
         activeBg: "rgba(221, 214, 254, .65)",
         activeBorder: "rgba(167, 139, 250, .30)",
-        iconBg: "rgba(196, 181, 253, .45)",
       },
-      next1: {
-        activeBg: "rgba(254, 240, 138, .45)",
-        activeBorder: "rgba(250, 204, 21, .25)",
-        iconBg: "rgba(253, 224, 71, .35)",
+      products: {
+        activeBg: "rgba(254, 240, 138, .55)",
+        activeBorder: "rgba(250, 204, 21, .30)",
       },
       next2: {
         activeBg: "rgba(253, 230, 138, .45)",
         activeBorder: "rgba(245, 158, 11, .22)",
-        iconBg: "rgba(252, 211, 77, .35)",
       },
     };
 
@@ -709,7 +1097,7 @@ export default function App() {
     const bgMap = {
       clients: "rgba(125, 211, 252, .35)",
       users: "rgba(196, 181, 253, .45)",
-      next1: "rgba(253, 224, 71, .35)",
+      products: "rgba(253, 224, 71, .35)",
       next2: "rgba(252, 211, 77, .35)",
     };
 
@@ -734,9 +1122,9 @@ export default function App() {
     borderRadius: 16,
     border: "1px dashed rgba(15, 23, 42, .16)",
     background:
-      variant === "next1"
-        ? "rgba(255, 251, 235, .65)"
-        : "rgba(255, 247, 237, .65)",
+      variant === "next2"
+        ? "rgba(255, 247, 237, .65)"
+        : "rgba(255, 251, 235, .65)",
     color: "#64748b",
     fontSize: 15,
     fontWeight: 600,
@@ -830,7 +1218,8 @@ export default function App() {
 
   const formCard = {
     ...card,
-    minHeight: activeTab === "clients" ? 620 : 420,
+    minHeight:
+      activeTab === "clients" ? 620 : activeTab === "products" ? 680 : 420,
   };
 
   const listCard = {
@@ -883,6 +1272,8 @@ export default function App() {
     background:
       activeTab === "users"
         ? "linear-gradient(90deg, rgba(196,181,253,.45), rgba(216,180,254,.35))"
+        : activeTab === "products"
+        ? "linear-gradient(90deg, rgba(253,224,71,.45), rgba(252,211,77,.35))"
         : "linear-gradient(90deg, rgba(167,139,250,.35), rgba(125,211,252,.35))",
     color: "#0f172a",
   };
@@ -899,25 +1290,25 @@ export default function App() {
     color: "#64748b",
   };
 
-  const msgBox = {
+  const getMessageBox = (type) => ({
     marginTop: 14,
     borderRadius: 14,
     padding: "12px 14px",
     border: "1px solid rgba(15, 23, 42, .12)",
     background:
-      msg.type === "success"
+      type === "success"
         ? "rgba(34,197,94,.12)"
-        : msg.type === "error"
+        : type === "error"
         ? "rgba(239,68,68,.10)"
         : "rgba(255,255,255,.7)",
     color:
-      msg.type === "success"
+      type === "success"
         ? "#166534"
-        : msg.type === "error"
+        : type === "error"
         ? "#991b1b"
         : "#334155",
     fontSize: 14,
-  };
+  });
 
   const loginMsgBox = {
     marginTop: 14,
@@ -926,16 +1317,6 @@ export default function App() {
     border: "1px solid rgba(15, 23, 42, .12)",
     background: "rgba(239,68,68,.10)",
     color: "#991b1b",
-    fontSize: 14,
-  };
-
-  const successBox = {
-    marginTop: 14,
-    borderRadius: 14,
-    padding: "12px 14px",
-    border: "1px solid rgba(15, 23, 42, .12)",
-    background: "rgba(34,197,94,.12)",
-    color: "#166534",
     fontSize: 14,
   };
 
@@ -1063,11 +1444,13 @@ export default function App() {
       <div style={loginPage}>
         <form style={loginCard} onSubmit={handleLogin}>
           <h1 style={{ marginTop: 0, marginBottom: 8 }}>Login</h1>
+
           <p style={{ marginTop: 0, color: "#475569" }}>
             Entre com seu e-mail e senha para acessar o sistema.
           </p>
 
           <label style={label}>E-mail</label>
+
           <input
             style={input}
             type="email"
@@ -1078,6 +1461,7 @@ export default function App() {
           />
 
           <label style={label}>Senha</label>
+
           <div style={passwordWrapper}>
             <input
               style={passwordInput}
@@ -1087,6 +1471,7 @@ export default function App() {
               onChange={(e) => setLoginField("password", e.target.value)}
               disabled={loading}
             />
+
             <button
               type="button"
               style={eyeButton}
@@ -1140,10 +1525,15 @@ export default function App() {
             {menuOpen ? "Usuários" : ""}
           </button>
 
-          <div style={placeholderItem("next1")} title="Próxima aba">
-            <span style={iconBubble("next1")}>➕</span>
-            {menuOpen ? "Próxima aba" : ""}
-          </div>
+          <button
+            type="button"
+            style={sideItem(activeTab === "products", "products")}
+            onClick={() => setActiveTab("products")}
+            title="Produtos"
+          >
+            <span style={iconBubble("products")}>📦</span>
+            {menuOpen ? "Produtos" : ""}
+          </button>
 
           <div style={placeholderItem("next2")} title="Próxima aba">
             <span style={iconBubble("next2")}>➕</span>
@@ -1156,10 +1546,15 @@ export default function App() {
             <div style={headerRow}>
               <div>
                 <h1 style={title}>
-                  {activeTab === "clients" ? "Clientes" : "Usuários"}
+                  {activeTab === "clients"
+                    ? "Clientes"
+                    : activeTab === "users"
+                    ? "Usuários"
+                    : "Produtos"}
                 </h1>
+
                 <p style={subtitle}>
-                  Bem-vinda, {user.name}. Use o menu lateral para navegar entre as telas.
+                  Olá, {user.name}! Use o menu lateral para navegar entre as telas.
                 </p>
               </div>
 
@@ -1167,9 +1562,15 @@ export default function App() {
                 {activeTab === "clients" && (
                   <span style={pill}>Total: {clients.length}</span>
                 )}
+
                 {activeTab === "users" && (
                   <span style={pill}>Total: {users.length}</span>
                 )}
+
+                {activeTab === "products" && (
+                  <span style={pill}>Total: {products.length}</span>
+                )}
+
                 <button style={logoutBtn} onClick={handleLogout}>
                   Sair
                 </button>
@@ -1182,45 +1583,48 @@ export default function App() {
               <div style={formCard}>
                 <div style={cardTitle}>Cadastro de clientes</div>
 
-                <form onSubmit={onSubmit}>
+                <form onSubmit={onSubmitClient}>
                   <label style={label}>Nome *</label>
+
                   <input
                     style={input}
                     placeholder="Digite o nome"
-                    value={form.name}
-                    onChange={(e) => setField("name", e.target.value)}
+                    value={clientForm.name}
+                    onChange={(e) => setClientField("name", e.target.value)}
                     disabled={loading}
                   />
 
                   <label style={label}>E-mail *</label>
+
                   <input
                     style={input}
                     placeholder="exemplo@dominio.com"
-                    value={form.email}
-                    onChange={(e) => setField("email", e.target.value)}
+                    value={clientForm.email}
+                    onChange={(e) => setClientField("email", e.target.value)}
                     disabled={loading}
                   />
 
                   <label style={label}>Telefone (10 ou 11)</label>
+
                   <input
                     style={input}
                     placeholder="Somente números"
-                    value={form.phone}
+                    value={clientForm.phone}
                     onChange={(e) =>
-                      setField("phone", e.target.value.replace(/\D/g, ""))
+                      setClientField("phone", e.target.value.replace(/\D/g, ""))
                     }
                     disabled={loading}
                   />
 
                   <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
                     <button type="submit" style={btnPrimary} disabled={loading}>
-                      {isEditing ? "Salvar alterações" : "Salvar"}
+                      {isEditingClient ? "Salvar alterações" : "Salvar"}
                     </button>
 
                     <button
                       type="button"
                       style={btnSecondary}
-                      onClick={clearForm}
+                      onClick={clearClientForm}
                       disabled={loading}
                     >
                       Limpar
@@ -1228,10 +1632,15 @@ export default function App() {
                   </div>
 
                   <div style={hint}>
-                    Dica: clique em <b>Editar</b> na tabela para preencher o formulário.
+                    Dica: clique em <b>Editar</b> na tabela para preencher o
+                    formulário.
                   </div>
 
-                  {msg.text && <div style={msgBox}>{msg.text}</div>}
+                  {clientMsg.text && (
+                    <div style={getMessageBox(clientMsg.type)}>
+                      {clientMsg.text}
+                    </div>
+                  )}
                 </form>
               </div>
 
@@ -1241,9 +1650,9 @@ export default function App() {
 
                   <input
                     style={search}
-                    placeholder="Buscar por nome, e-mail ou telefone…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Buscar por nome, e-mail ou telefone..."
+                    value={clientQuery}
+                    onChange={(e) => setClientQuery(e.target.value)}
                     disabled={loading}
                   />
                 </div>
@@ -1262,19 +1671,20 @@ export default function App() {
                     </thead>
 
                     <tbody>
-                      {filtered.map((c, idx) => (
+                      {filteredClients.map((c, idx) => (
                         <tr key={c.id}>
                           <td style={td}>{idx + 1}</td>
                           <td style={td}>{c.name}</td>
                           <td style={td}>{c.email}</td>
                           <td style={td}>{c.phone || "-"}</td>
                           <td style={td}>{formatDatePtBr(c.created_at)}</td>
+
                           <td style={{ ...td, textAlign: "right" }}>
                             <div style={actions}>
                               <button
                                 type="button"
                                 style={actionBtn("edit")}
-                                onClick={() => startEdit(c)}
+                                onClick={() => startEditClient(c)}
                                 disabled={loading}
                               >
                                 Editar
@@ -1283,7 +1693,7 @@ export default function App() {
                               <button
                                 type="button"
                                 style={actionBtn("delete")}
-                                onClick={() => onDelete(c.id)}
+                                onClick={() => onDeleteClient(c.id)}
                                 disabled={loading}
                               >
                                 Excluir
@@ -1293,7 +1703,7 @@ export default function App() {
                         </tr>
                       ))}
 
-                      {filtered.length === 0 && (
+                      {filteredClients.length === 0 && (
                         <tr>
                           <td style={emptyTd} colSpan={6}>
                             Nenhum cliente cadastrado ainda.
@@ -1305,7 +1715,7 @@ export default function App() {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : activeTab === "users" ? (
             <div style={sectionGrid}>
               <div style={formCard}>
                 <div style={cardTitle}>
@@ -1314,6 +1724,7 @@ export default function App() {
 
                 <form onSubmit={handleSaveUser}>
                   <label style={label}>Nome</label>
+
                   <input
                     style={input}
                     type="text"
@@ -1324,6 +1735,7 @@ export default function App() {
                   />
 
                   <label style={label}>E-mail</label>
+
                   <input
                     style={input}
                     type="email"
@@ -1336,6 +1748,7 @@ export default function App() {
                   <label style={label}>
                     {userForm.id ? "Senha (opcional para alterar)" : "Senha"}
                   </label>
+
                   <input
                     style={input}
                     type="password"
@@ -1365,15 +1778,7 @@ export default function App() {
                   </div>
 
                   {userMsg.text && (
-                    <div
-                      style={
-                        userMsg.type === "success"
-                          ? successBox
-                          : userMsg.type === "error"
-                          ? loginMsgBox
-                          : msgBox
-                      }
-                    >
+                    <div style={getMessageBox(userMsg.type)}>
                       {userMsg.text}
                     </div>
                   )}
@@ -1402,6 +1807,7 @@ export default function App() {
                           <td style={td}>{item.name}</td>
                           <td style={td}>{item.email}</td>
                           <td style={td}>{formatDatePtBr(item.created_at)}</td>
+
                           <td style={{ ...td, textAlign: "right" }}>
                             <div style={actions}>
                               <button
@@ -1430,6 +1836,227 @@ export default function App() {
                         <tr>
                           <td style={emptyTd} colSpan={5}>
                             Nenhum usuário cadastrado ainda.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={sectionGrid}>
+              <div style={formCard}>
+                <div style={cardTitle}>
+                  {productForm.id ? "Editar produto" : "Cadastro de produtos"}
+                </div>
+
+                <form onSubmit={onSubmitProduct}>
+                  <label style={label}>Código EAN-13 *</label>
+
+                  <input
+                    style={input}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={13}
+                    placeholder="Ex: 7891234567895"
+                    value={productForm.ean13}
+                    onChange={(e) =>
+                      setProductField(
+                        "ean13",
+                        e.target.value.replace(/\D/g, "").slice(0, 13)
+                      )
+                    }
+                    disabled={loading}
+                  />
+
+                  <label style={label}>Nome *</label>
+
+                  <input
+                    style={input}
+                    type="text"
+                    placeholder="Digite o nome do produto"
+                    value={productForm.name}
+                    onChange={(e) => setProductField("name", e.target.value)}
+                    disabled={loading}
+                  />
+
+                  <label style={label}>Descrição</label>
+
+                  <input
+                    style={input}
+                    type="text"
+                    placeholder="Descrição do produto"
+                    value={productForm.description}
+                    onChange={(e) =>
+                      setProductField("description", e.target.value)
+                    }
+                    disabled={loading}
+                  />
+
+                  <label style={label}>Preço *</label>
+
+                  <input
+                    style={input}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Ex: 99.90"
+                    value={productForm.price}
+                    onChange={(e) => setProductField("price", e.target.value)}
+                    disabled={loading}
+                  />
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 120px",
+                      gap: 10,
+                      alignItems: "end",
+                    }}
+                  >
+                    <div>
+                      <label style={label}>Quantidade em estoque *</label>
+
+                      <input
+                        style={input}
+                        type="number"
+                        min="0"
+                        step={productForm.unit_measure === "KG" ? "0.001" : "1"}
+                        placeholder={
+                          productForm.unit_measure === "KG"
+                            ? "Ex: 2.500"
+                            : "Ex: 10"
+                        }
+                        value={productForm.quantity}
+                        onChange={(e) =>
+                          setProductField("quantity", e.target.value)
+                        }
+                        disabled={loading}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={label}>Unidade</label>
+
+                      <select
+                        style={input}
+                        value={productForm.unit_measure}
+                        onChange={(e) => {
+                          const selected = e.target.value;
+                          setProductField("unit_measure", selected);
+
+                          if (selected === "UN" && productForm.quantity) {
+                            const n = Number(productForm.quantity);
+
+                            if (Number.isFinite(n)) {
+                              setProductField("quantity", String(Math.trunc(n)));
+                            }
+                          }
+                        }}
+                        disabled={loading}
+                      >
+                        <option value="UN">UN</option>
+                        <option value="KG">KG</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+                    <button type="submit" style={btnPrimary} disabled={loading}>
+                      {isEditingProduct ? "Salvar alterações" : "Salvar"}
+                    </button>
+
+                    <button
+                      type="button"
+                      style={btnSecondary}
+                      onClick={clearProductForm}
+                      disabled={loading}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+
+                  <div style={hint}>
+                    Dica: clique em <b>Editar</b> na tabela para preencher o
+                    formulário.
+                  </div>
+
+                  {productMsg.text && (
+                    <div style={getMessageBox(productMsg.type)}>
+                      {productMsg.text}
+                    </div>
+                  )}
+                </form>
+              </div>
+
+              <div style={listCard}>
+                <div style={topRow}>
+                  <div style={cardTitle}>Lista de produtos</div>
+
+                  <input
+                    style={search}
+                    placeholder="Buscar por EAN-13, nome, descrição, preço ou estoque..."
+                    value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+
+                <div style={tableWrap}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>EAN-13</th>
+                        <th style={th}>Nome</th>
+                        <th style={th}>Descrição</th>
+                        <th style={th}>Preço</th>
+                        <th style={th}>Estoque</th>
+                        <th style={th}>Cadastrado em</th>
+                        <th style={{ ...th, textAlign: "right" }}>Ações</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {filteredProducts.map((p) => (
+                        <tr key={p.id}>
+                          <td style={td}>{p.ean13 || "-"}</td>
+                          <td style={td}>{p.name}</td>
+                          <td style={td}>{p.description || "-"}</td>
+                          <td style={td}>{formatMoneyPtBr(p.price)}</td>
+                          <td style={td}>
+                            {formatStock(p.quantity, p.unit_measure)}
+                          </td>
+                          <td style={td}>{formatDatePtBr(p.created_at)}</td>
+
+                          <td style={{ ...td, textAlign: "right" }}>
+                            <div style={actions}>
+                              <button
+                                type="button"
+                                style={actionBtn("edit")}
+                                onClick={() => startEditProduct(p)}
+                                disabled={loading}
+                              >
+                                Editar
+                              </button>
+
+                              <button
+                                type="button"
+                                style={actionBtn("delete")}
+                                onClick={() => onDeleteProduct(p.id)}
+                                disabled={loading}
+                              >
+                                Excluir
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+
+                      {filteredProducts.length === 0 && (
+                        <tr>
+                          <td style={emptyTd} colSpan={7}>
+                            Nenhum produto cadastrado ainda.
                           </td>
                         </tr>
                       )}
