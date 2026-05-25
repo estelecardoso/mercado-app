@@ -47,6 +47,19 @@ function formatStock(value, unitMeasure) {
   return `${Math.trunc(n)} UN`;
 }
 
+function formatCnpj(value) {
+  const cnpj = String(value || "").replace(/\D/g, "");
+
+  if (!cnpj) return "-";
+
+  if (cnpj.length !== 14) return cnpj;
+
+  return cnpj.replace(
+    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+    "$1.$2.$3/$4-$5"
+  );
+}
+
 function isValidEmail(email) {
   return /^\S+@\S+\.\S+$/.test(email);
 }
@@ -121,9 +134,18 @@ export default function App() {
     unit_measure: "UN",
   });
 
+  const [supplierForm, setSupplierForm] = useState({
+    id: null,
+    name: "",
+    email: "",
+    phone: "",
+    cnpj: "",
+  });
+
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   const [clientMsg, setClientMsg] = useState({
     type: "info",
@@ -140,10 +162,18 @@ export default function App() {
     text: "",
   });
 
+  const [supplierMsg, setSupplierMsg] = useState({
+    type: "info",
+    text: "",
+  });
+
   const [loginMsg, setLoginMsg] = useState("");
   const [loading, setLoading] = useState(false);
+
   const [clientQuery, setClientQuery] = useState("");
   const [productQuery, setProductQuery] = useState("");
+  const [supplierQuery, setSupplierQuery] = useState("");
+
   const [screenWidth, setScreenWidth] = useState(window.innerWidth);
 
   useEffect(() => {
@@ -176,10 +206,7 @@ export default function App() {
 
       if (!res.ok) {
         throw new Error(
-          data?.details ||
-            data?.error ||
-            data?.message ||
-            `Erro HTTP ${res.status}`
+          data?.details || data?.error || data?.message || `Erro HTTP ${res.status}`
         );
       }
 
@@ -208,6 +235,7 @@ export default function App() {
       loadClients();
       loadUsers();
       loadProducts();
+      loadSuppliers();
     }
   }, [user]);
 
@@ -247,6 +275,18 @@ export default function App() {
     }
   }
 
+  async function loadSuppliers() {
+    try {
+      const data = await apiJson(`${API}/suppliers`);
+      setSuppliers(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setSupplierMsg({
+        type: "error",
+        text: e.message || "Erro ao carregar fornecedores.",
+      });
+    }
+  }
+
   function setLoginField(name, value) {
     setLoginForm((prev) => ({
       ...prev,
@@ -270,6 +310,13 @@ export default function App() {
 
   function setProductField(name, value) {
     setProductForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  }
+
+  function setSupplierField(name, value) {
+    setSupplierForm((prev) => ({
       ...prev,
       [name]: value,
     }));
@@ -315,6 +362,21 @@ export default function App() {
     });
 
     setProductMsg({
+      type: "info",
+      text: "",
+    });
+  }
+
+  function clearSupplierForm() {
+    setSupplierForm({
+      id: null,
+      name: "",
+      email: "",
+      phone: "",
+      cnpj: "",
+    });
+
+    setSupplierMsg({
       type: "info",
       text: "",
     });
@@ -378,6 +440,28 @@ export default function App() {
     setProductMsg({
       type: "info",
       text: "Editando produto. Altere os campos e clique em Salvar alterações.",
+    });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
+  }
+
+  function startEditSupplier(supplier) {
+    setActiveTab("suppliers");
+
+    setSupplierForm({
+      id: supplier.id,
+      name: supplier.name || "",
+      email: supplier.email || "",
+      phone: supplier.phone || "",
+      cnpj: supplier.cnpj || "",
+    });
+
+    setSupplierMsg({
+      type: "info",
+      text: "Editando fornecedor. Altere os campos e clique em Salvar alterações.",
     });
 
     window.scrollTo({
@@ -545,6 +629,8 @@ export default function App() {
     setClients([]);
     setUsers([]);
     setProducts([]);
+    setSuppliers([]);
+
     setActiveTab("clients");
     setMenuOpen(false);
 
@@ -572,6 +658,14 @@ export default function App() {
       unit_measure: "UN",
     });
 
+    setSupplierForm({
+      id: null,
+      name: "",
+      email: "",
+      phone: "",
+      cnpj: "",
+    });
+
     setClientMsg({
       type: "info",
       text: "",
@@ -587,8 +681,14 @@ export default function App() {
       text: "",
     });
 
+    setSupplierMsg({
+      type: "info",
+      text: "",
+    });
+
     setClientQuery("");
     setProductQuery("");
+    setSupplierQuery("");
     setLoginMsg("");
   }
 
@@ -706,6 +806,45 @@ export default function App() {
       setProductMsg({
         type: "error",
         text: e.message || "Erro ao excluir produto.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onDeleteSupplier(id) {
+    if (loading) return;
+
+    const ok = confirm("Tem certeza que deseja excluir este fornecedor?");
+
+    if (!ok) return;
+
+    setLoading(true);
+
+    setSupplierMsg({
+      type: "info",
+      text: "",
+    });
+
+    try {
+      await apiJson(`${API}/suppliers/${id}`, {
+        method: "DELETE",
+      });
+
+      setSupplierMsg({
+        type: "success",
+        text: "Fornecedor excluído com sucesso!",
+      });
+
+      if (supplierForm.id === id) {
+        clearSupplierForm();
+      }
+
+      await loadSuppliers();
+    } catch (e) {
+      setSupplierMsg({
+        type: "error",
+        text: e.message || "Erro ao excluir fornecedor.",
       });
     } finally {
       setLoading(false);
@@ -947,6 +1086,124 @@ export default function App() {
     }
   }
 
+  async function onSubmitSupplier(e) {
+    e.preventDefault();
+
+    if (loading) return;
+
+    const name = supplierForm.name.trim();
+    const email = supplierForm.email.trim().toLowerCase();
+    const phone = supplierForm.phone
+      ? supplierForm.phone.replace(/\D/g, "")
+      : "";
+    const cnpj = supplierForm.cnpj ? supplierForm.cnpj.replace(/\D/g, "") : "";
+
+    if (!name) {
+      setSupplierMsg({
+        type: "error",
+        text: "Digite o nome do fornecedor.",
+      });
+      return;
+    }
+
+    if (!isValidName(name)) {
+      setSupplierMsg({
+        type: "error",
+        text: "O nome deve conter apenas letras.",
+      });
+      return;
+    }
+
+    if (!email) {
+      setSupplierMsg({
+        type: "error",
+        text: "Digite o e-mail.",
+      });
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      setSupplierMsg({
+        type: "error",
+        text: "Digite um e-mail válido, exemplo exemplo@dominio.com",
+      });
+      return;
+    }
+
+    if (phone && !(phone.length === 10 || phone.length === 11)) {
+      setSupplierMsg({
+        type: "error",
+        text: "Telefone deve ter 10 ou 11 dígitos.",
+      });
+      return;
+    }
+
+    if (cnpj && cnpj.length !== 14) {
+      setSupplierMsg({
+        type: "error",
+        text: "CNPJ deve ter 14 dígitos.",
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    setSupplierMsg({
+      type: "info",
+      text: "",
+    });
+
+    try {
+      if (supplierForm.id) {
+        await apiJson(`${API}/suppliers/${supplierForm.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email,
+            phone: phone || null,
+            cnpj: cnpj || null,
+          }),
+        });
+
+        setSupplierMsg({
+          type: "success",
+          text: "Alterações salvas com sucesso!",
+        });
+      } else {
+        await apiJson(`${API}/suppliers`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name,
+            email,
+            phone: phone || null,
+            cnpj: cnpj || null,
+          }),
+        });
+
+        setSupplierMsg({
+          type: "success",
+          text: "Fornecedor cadastrado com sucesso!",
+        });
+      }
+
+      clearSupplierForm();
+      await loadSuppliers();
+    } catch (e) {
+      setSupplierMsg({
+        type: "error",
+        text: e.message || "Erro ao salvar fornecedor.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const filteredClients = useMemo(() => {
     const q = normalizeText(clientQuery);
 
@@ -981,8 +1238,25 @@ export default function App() {
     });
   }, [products, productQuery]);
 
+  const filteredSuppliers = useMemo(() => {
+    const q = normalizeText(supplierQuery);
+
+    if (!q) return suppliers;
+
+    const terms = q.split(/\s+/).filter(Boolean);
+
+    return suppliers.filter((s) => {
+      const searchable = normalizeText(
+        `${s.name || ""} ${s.email || ""} ${s.phone || ""} ${s.cnpj || ""}`
+      );
+
+      return terms.every((term) => searchable.includes(term));
+    });
+  }, [suppliers, supplierQuery]);
+
   const isEditingClient = Boolean(clientForm.id);
   const isEditingProduct = Boolean(productForm.id);
+  const isEditingSupplier = Boolean(supplierForm.id);
 
   const loginPage = {
     minHeight: "100vh",
@@ -1062,9 +1336,9 @@ export default function App() {
         activeBg: "rgba(254, 240, 138, .55)",
         activeBorder: "rgba(250, 204, 21, .30)",
       },
-      next2: {
-        activeBg: "rgba(253, 230, 138, .45)",
-        activeBorder: "rgba(245, 158, 11, .22)",
+      suppliers: {
+        activeBg: "rgba(187, 247, 208, .60)",
+        activeBorder: "rgba(34, 197, 94, .30)",
       },
     };
 
@@ -1098,7 +1372,7 @@ export default function App() {
       clients: "rgba(125, 211, 252, .35)",
       users: "rgba(196, 181, 253, .45)",
       products: "rgba(253, 224, 71, .35)",
-      next2: "rgba(252, 211, 77, .35)",
+      suppliers: "rgba(134, 239, 172, .38)",
     };
 
     return {
@@ -1114,27 +1388,6 @@ export default function App() {
       flexShrink: 0,
     };
   };
-
-  const placeholderItem = (variant) => ({
-    width: "100%",
-    textAlign: "left",
-    padding: "14px 16px",
-    borderRadius: 16,
-    border: "1px dashed rgba(15, 23, 42, .16)",
-    background:
-      variant === "next2"
-        ? "rgba(255, 247, 237, .65)"
-        : "rgba(255, 251, 235, .65)",
-    color: "#64748b",
-    fontSize: 15,
-    fontWeight: 600,
-    marginBottom: 10,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  });
 
   const contentWrap = {
     display: "grid",
@@ -1219,7 +1472,13 @@ export default function App() {
   const formCard = {
     ...card,
     minHeight:
-      activeTab === "clients" ? 620 : activeTab === "products" ? 680 : 420,
+      activeTab === "clients"
+        ? 620
+        : activeTab === "products"
+        ? 680
+        : activeTab === "suppliers"
+        ? 640
+        : 420,
   };
 
   const listCard = {
@@ -1256,6 +1515,10 @@ export default function App() {
     boxSizing: "border-box",
   };
 
+  const select = {
+    ...input,
+  };
+
   const btnBase = {
     width: "100%",
     padding: "14px 14px",
@@ -1274,6 +1537,8 @@ export default function App() {
         ? "linear-gradient(90deg, rgba(196,181,253,.45), rgba(216,180,254,.35))"
         : activeTab === "products"
         ? "linear-gradient(90deg, rgba(253,224,71,.45), rgba(252,211,77,.35))"
+        : activeTab === "suppliers"
+        ? "linear-gradient(90deg, rgba(134,239,172,.45), rgba(187,247,208,.35))"
         : "linear-gradient(90deg, rgba(167,139,250,.35), rgba(125,211,252,.35))",
     color: "#0f172a",
   };
@@ -1441,62 +1706,57 @@ export default function App() {
 
   if (!user) {
     return (
-      <div style={loginPage}>
-        <form style={loginCard} onSubmit={handleLogin}>
-          <h1 style={{ marginTop: 0, marginBottom: 8 }}>Login</h1>
+      <main style={loginPage}>
+        <section style={loginCard}>
+          <h1 style={{ margin: 0, fontSize: 38 }}>Login</h1>
 
-          <p style={{ marginTop: 0, color: "#475569" }}>
-            Entre com seu e-mail e senha para acessar o sistema.
-          </p>
+          <p style={subtitle}>Entre com seu e-mail e senha para acessar o sistema.</p>
 
-          <label style={label}>E-mail</label>
-
-          <input
-            style={input}
-            type="email"
-            placeholder="exemplo@dominio.com"
-            value={loginForm.email}
-            onChange={(e) => setLoginField("email", e.target.value)}
-            disabled={loading}
-          />
-
-          <label style={label}>Senha</label>
-
-          <div style={passwordWrapper}>
+          <form onSubmit={handleLogin} style={{ marginTop: 22 }}>
+            <label style={label}>E-mail</label>
             <input
-              style={passwordInput}
-              type={showLoginPassword ? "text" : "password"}
-              placeholder="Digite sua senha"
-              value={loginForm.password}
-              onChange={(e) => setLoginField("password", e.target.value)}
+              style={input}
+              value={loginForm.email}
+              onChange={(e) => setLoginField("email", e.target.value)}
               disabled={loading}
+              placeholder="seu@email.com"
             />
 
-            <button
-              type="button"
-              style={eyeButton}
-              onClick={() => setShowLoginPassword((prev) => !prev)}
-              aria-label={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}
-              title={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}
-            >
-              {showLoginPassword ? "🙈" : "👁️"}
-            </button>
-          </div>
+            <label style={label}>Senha</label>
+            <div style={passwordWrapper}>
+              <input
+                style={passwordInput}
+                type={showLoginPassword ? "text" : "password"}
+                value={loginForm.password}
+                onChange={(e) => setLoginField("password", e.target.value)}
+                disabled={loading}
+                placeholder="Digite sua senha"
+              />
 
-          <div style={{ marginTop: 16 }}>
-            <button type="submit" style={btnPrimary} disabled={loading}>
+              <button
+                type="button"
+                style={eyeButton}
+                onClick={() => setShowLoginPassword((prev) => !prev)}
+                aria-label={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}
+                title={showLoginPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showLoginPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
+
+            <button style={{ ...btnPrimary, marginTop: 18 }} disabled={loading}>
               Entrar
             </button>
-          </div>
+          </form>
 
           {loginMsg && <div style={loginMsgBox}>{loginMsg}</div>}
-        </form>
-      </div>
+        </section>
+      </main>
     );
   }
 
   return (
-    <div style={page}>
+    <main style={page}>
       <div style={shell}>
         <aside
           style={sidebar}
@@ -1506,27 +1766,24 @@ export default function App() {
           <h2 style={sidebarTitle}>Menu</h2>
 
           <button
-            type="button"
             style={sideItem(activeTab === "clients", "clients")}
             onClick={() => setActiveTab("clients")}
             title="Clientes"
           >
-            <span style={iconBubble("clients")}>📋</span>
+            <span style={iconBubble("clients")}>👥</span>
             {menuOpen ? "Clientes" : ""}
           </button>
 
           <button
-            type="button"
             style={sideItem(activeTab === "users", "users")}
             onClick={() => setActiveTab("users")}
             title="Usuários"
           >
-            <span style={iconBubble("users")}>👤</span>
+            <span style={iconBubble("users")}>🔐</span>
             {menuOpen ? "Usuários" : ""}
           </button>
 
           <button
-            type="button"
             style={sideItem(activeTab === "products", "products")}
             onClick={() => setActiveTab("products")}
             title="Produtos"
@@ -1535,14 +1792,18 @@ export default function App() {
             {menuOpen ? "Produtos" : ""}
           </button>
 
-          <div style={placeholderItem("next2")} title="Próxima aba">
-            <span style={iconBubble("next2")}>➕</span>
-            {menuOpen ? "Próxima aba" : ""}
-          </div>
+          <button
+            style={sideItem(activeTab === "suppliers", "suppliers")}
+            onClick={() => setActiveTab("suppliers")}
+            title="Fornecedores"
+          >
+            <span style={iconBubble("suppliers")}>🚚</span>
+            {menuOpen ? "Fornecedores" : ""}
+          </button>
         </aside>
 
         <div style={contentWrap}>
-          <div style={headerCard}>
+          <header style={headerCard}>
             <div style={headerRow}>
               <div>
                 <h1 style={title}>
@@ -1550,7 +1811,9 @@ export default function App() {
                     ? "Clientes"
                     : activeTab === "users"
                     ? "Usuários"
-                    : "Produtos"}
+                    : activeTab === "products"
+                    ? "Produtos"
+                    : "Fornecedores"}
                 </h1>
 
                 <p style={subtitle}>
@@ -1571,53 +1834,54 @@ export default function App() {
                   <span style={pill}>Total: {products.length}</span>
                 )}
 
+                {activeTab === "suppliers" && (
+                  <span style={pill}>Total: {suppliers.length}</span>
+                )}
+
                 <button style={logoutBtn} onClick={handleLogout}>
                   Sair
                 </button>
               </div>
             </div>
-          </div>
+          </header>
 
-          {activeTab === "clients" ? (
+          {activeTab === "clients" && (
             <div style={sectionGrid}>
-              <div style={formCard}>
-                <div style={cardTitle}>Cadastro de clientes</div>
+              <section style={formCard}>
+                <h2 style={cardTitle}>Cadastro de clientes</h2>
 
                 <form onSubmit={onSubmitClient}>
                   <label style={label}>Nome *</label>
-
                   <input
                     style={input}
-                    placeholder="Digite o nome"
                     value={clientForm.name}
                     onChange={(e) => setClientField("name", e.target.value)}
                     disabled={loading}
+                    placeholder="Ex: Maria Silva"
                   />
 
                   <label style={label}>E-mail *</label>
-
                   <input
                     style={input}
-                    placeholder="exemplo@dominio.com"
                     value={clientForm.email}
                     onChange={(e) => setClientField("email", e.target.value)}
                     disabled={loading}
+                    placeholder="cliente@email.com"
                   />
 
                   <label style={label}>Telefone (10 ou 11)</label>
-
                   <input
                     style={input}
-                    placeholder="Somente números"
                     value={clientForm.phone}
                     onChange={(e) =>
                       setClientField("phone", e.target.value.replace(/\D/g, ""))
                     }
                     disabled={loading}
+                    placeholder="11999999999"
                   />
 
-                  <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
-                    <button type="submit" style={btnPrimary} disabled={loading}>
+                  <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+                    <button style={btnPrimary} disabled={loading}>
                       {isEditingClient ? "Salvar alterações" : "Salvar"}
                     </button>
 
@@ -1630,23 +1894,22 @@ export default function App() {
                       Limpar
                     </button>
                   </div>
-
-                  <div style={hint}>
-                    Dica: clique em <b>Editar</b> na tabela para preencher o
-                    formulário.
-                  </div>
-
-                  {clientMsg.text && (
-                    <div style={getMessageBox(clientMsg.type)}>
-                      {clientMsg.text}
-                    </div>
-                  )}
                 </form>
-              </div>
 
-              <div style={listCard}>
+                <p style={hint}>
+                  Dica: clique em Editar na tabela para preencher o formulário.
+                </p>
+
+                {clientMsg.text && (
+                  <div style={getMessageBox(clientMsg.type)}>
+                    {clientMsg.text}
+                  </div>
+                )}
+              </section>
+
+              <section style={listCard}>
                 <div style={topRow}>
-                  <div style={cardTitle}>Lista de clientes</div>
+                  <h2 style={cardTitle}>Lista de clientes</h2>
 
                   <input
                     style={search}
@@ -1671,99 +1934,89 @@ export default function App() {
                     </thead>
 
                     <tbody>
-                      {filteredClients.map((c, idx) => (
-                        <tr key={c.id}>
-                          <td style={td}>{idx + 1}</td>
-                          <td style={td}>{c.name}</td>
-                          <td style={td}>{c.email}</td>
-                          <td style={td}>{c.phone || "-"}</td>
-                          <td style={td}>{formatDatePtBr(c.created_at)}</td>
-
-                          <td style={{ ...td, textAlign: "right" }}>
-                            <div style={actions}>
-                              <button
-                                type="button"
-                                style={actionBtn("edit")}
-                                onClick={() => startEditClient(c)}
-                                disabled={loading}
-                              >
-                                Editar
-                              </button>
-
-                              <button
-                                type="button"
-                                style={actionBtn("delete")}
-                                onClick={() => onDeleteClient(c.id)}
-                                disabled={loading}
-                              >
-                                Excluir
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {filteredClients.length === 0 && (
+                      {filteredClients.length === 0 ? (
                         <tr>
                           <td style={emptyTd} colSpan={6}>
                             Nenhum cliente cadastrado ainda.
                           </td>
                         </tr>
+                      ) : (
+                        filteredClients.map((c, idx) => (
+                          <tr key={c.id}>
+                            <td style={td}>{idx + 1}</td>
+                            <td style={td}>{c.name}</td>
+                            <td style={td}>{c.email}</td>
+                            <td style={td}>{c.phone || "-"}</td>
+                            <td style={td}>{formatDatePtBr(c.created_at)}</td>
+                            <td style={td}>
+                              <div style={actions}>
+                                <button
+                                  style={actionBtn("edit")}
+                                  onClick={() => startEditClient(c)}
+                                  disabled={loading}
+                                >
+                                  Editar
+                                </button>
+
+                                <button
+                                  style={actionBtn("delete")}
+                                  onClick={() => onDeleteClient(c.id)}
+                                  disabled={loading}
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
                       )}
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
             </div>
-          ) : activeTab === "users" ? (
+          )}
+
+          {activeTab === "users" && (
             <div style={sectionGrid}>
-              <div style={formCard}>
-                <div style={cardTitle}>
+              <section style={formCard}>
+                <h2 style={cardTitle}>
                   {userForm.id ? "Editar usuário" : "Cadastro de usuários"}
-                </div>
+                </h2>
 
                 <form onSubmit={handleSaveUser}>
                   <label style={label}>Nome</label>
-
                   <input
                     style={input}
-                    type="text"
-                    placeholder="Digite o nome"
                     value={userForm.name}
                     onChange={(e) => setUserField("name", e.target.value)}
                     disabled={loading}
+                    placeholder="Ex: João Silva"
                   />
 
                   <label style={label}>E-mail</label>
-
                   <input
                     style={input}
-                    type="email"
-                    placeholder="exemplo@dominio.com"
                     value={userForm.email}
                     onChange={(e) => setUserField("email", e.target.value)}
                     disabled={loading}
+                    placeholder="usuario@email.com"
                   />
 
                   <label style={label}>
                     {userForm.id ? "Senha (opcional para alterar)" : "Senha"}
                   </label>
-
                   <input
                     style={input}
                     type="password"
-                    placeholder={
-                      userForm.id
-                        ? "Digite só se quiser alterar"
-                        : "Mínimo 6 caracteres"
-                    }
                     value={userForm.password}
                     onChange={(e) => setUserField("password", e.target.value)}
                     disabled={loading}
+                    placeholder="Mínimo 6 caracteres"
                   />
 
-                  <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
-                    <button type="submit" style={btnPrimary} disabled={loading}>
+                  <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+                    <button style={btnPrimary} disabled={loading}>
                       {userForm.id ? "Salvar alterações" : "Cadastrar usuário"}
                     </button>
 
@@ -1776,23 +2029,22 @@ export default function App() {
                       Limpar
                     </button>
                   </div>
-
-                  {userMsg.text && (
-                    <div style={getMessageBox(userMsg.type)}>
-                      {userMsg.text}
-                    </div>
-                  )}
                 </form>
-              </div>
 
-              <div style={listCard}>
-                <div style={cardTitle}>Lista de usuários</div>
+                {userMsg.text && (
+                  <div style={getMessageBox(userMsg.type)}>{userMsg.text}</div>
+                )}
+              </section>
+
+              <section style={listCard}>
+                <div style={topRow}>
+                  <h2 style={cardTitle}>Lista de usuários</h2>
+                </div>
 
                 <div style={tableWrap}>
                   <table style={table}>
                     <thead>
                       <tr>
-                        <th style={th}>Quantidade</th>
                         <th style={th}>Nome</th>
                         <th style={th}>E-mail</th>
                         <th style={th}>Cadastrado em</th>
@@ -1801,169 +2053,123 @@ export default function App() {
                     </thead>
 
                     <tbody>
-                      {users.map((item, idx) => (
-                        <tr key={item.id}>
-                          <td style={td}>{idx + 1}</td>
-                          <td style={td}>{item.name}</td>
-                          <td style={td}>{item.email}</td>
-                          <td style={td}>{formatDatePtBr(item.created_at)}</td>
-
-                          <td style={{ ...td, textAlign: "right" }}>
-                            <div style={actions}>
-                              <button
-                                type="button"
-                                style={actionBtn("edit")}
-                                onClick={() => startEditUser(item)}
-                                disabled={loading}
-                              >
-                                Editar
-                              </button>
-
-                              <button
-                                type="button"
-                                style={actionBtn("delete")}
-                                onClick={() => onDeleteUser(item.id)}
-                                disabled={loading}
-                              >
-                                Excluir
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {users.length === 0 && (
+                      {users.length === 0 ? (
                         <tr>
-                          <td style={emptyTd} colSpan={5}>
+                          <td style={emptyTd} colSpan={4}>
                             Nenhum usuário cadastrado ainda.
                           </td>
                         </tr>
+                      ) : (
+                        users.map((u) => (
+                          <tr key={u.id}>
+                            <td style={td}>{u.name}</td>
+                            <td style={td}>{u.email}</td>
+                            <td style={td}>{formatDatePtBr(u.created_at)}</td>
+                            <td style={td}>
+                              <div style={actions}>
+                                <button
+                                  style={actionBtn("edit")}
+                                  onClick={() => startEditUser(u)}
+                                  disabled={loading}
+                                >
+                                  Editar
+                                </button>
+
+                                <button
+                                  style={actionBtn("delete")}
+                                  onClick={() => onDeleteUser(u.id)}
+                                  disabled={loading}
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
                       )}
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
             </div>
-          ) : (
+          )}
+
+          {activeTab === "products" && (
             <div style={sectionGrid}>
-              <div style={formCard}>
-                <div style={cardTitle}>
-                  {productForm.id ? "Editar produto" : "Cadastro de produtos"}
-                </div>
+              <section style={formCard}>
+                <h2 style={cardTitle}>Cadastro de produtos</h2>
 
                 <form onSubmit={onSubmitProduct}>
                   <label style={label}>Código EAN-13 *</label>
-
                   <input
                     style={input}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={13}
-                    placeholder="Ex: 7891234567895"
                     value={productForm.ean13}
                     onChange={(e) =>
-                      setProductField(
-                        "ean13",
-                        e.target.value.replace(/\D/g, "").slice(0, 13)
-                      )
+                      setProductField("ean13", e.target.value.replace(/\D/g, ""))
                     }
                     disabled={loading}
+                    placeholder="7891234567895"
                   />
 
                   <label style={label}>Nome *</label>
-
                   <input
                     style={input}
-                    type="text"
-                    placeholder="Digite o nome do produto"
                     value={productForm.name}
                     onChange={(e) => setProductField("name", e.target.value)}
                     disabled={loading}
+                    placeholder="Ex: Arroz 5kg"
                   />
 
                   <label style={label}>Descrição</label>
-
                   <input
                     style={input}
-                    type="text"
-                    placeholder="Descrição do produto"
                     value={productForm.description}
                     onChange={(e) =>
                       setProductField("description", e.target.value)
                     }
                     disabled={loading}
+                    placeholder="Descrição do produto"
                   />
 
                   <label style={label}>Preço *</label>
-
                   <input
                     style={input}
                     type="number"
                     step="0.01"
                     min="0"
-                    placeholder="Ex: 99.90"
                     value={productForm.price}
                     onChange={(e) => setProductField("price", e.target.value)}
                     disabled={loading}
+                    placeholder="0.00"
                   />
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 120px",
-                      gap: 10,
-                      alignItems: "end",
-                    }}
+                  <label style={label}>Quantidade em estoque *</label>
+                  <input
+                    style={input}
+                    type="number"
+                    step={productForm.unit_measure === "KG" ? "0.001" : "1"}
+                    min="0"
+                    value={productForm.quantity}
+                    onChange={(e) => setProductField("quantity", e.target.value)}
+                    disabled={loading}
+                    placeholder="0"
+                  />
+
+                  <label style={label}>Unidade de medida</label>
+                  <select
+                    style={select}
+                    value={productForm.unit_measure}
+                    onChange={(e) =>
+                      setProductField("unit_measure", e.target.value)
+                    }
+                    disabled={loading}
                   >
-                    <div>
-                      <label style={label}>Quantidade em estoque *</label>
+                    <option value="UN">UN</option>
+                    <option value="KG">KG</option>
+                  </select>
 
-                      <input
-                        style={input}
-                        type="number"
-                        min="0"
-                        step={productForm.unit_measure === "KG" ? "0.001" : "1"}
-                        placeholder={
-                          productForm.unit_measure === "KG"
-                            ? "Ex: 2.500"
-                            : "Ex: 10"
-                        }
-                        value={productForm.quantity}
-                        onChange={(e) =>
-                          setProductField("quantity", e.target.value)
-                        }
-                        disabled={loading}
-                      />
-                    </div>
-
-                    <div>
-                      <label style={label}>Unidade</label>
-
-                      <select
-                        style={input}
-                        value={productForm.unit_measure}
-                        onChange={(e) => {
-                          const selected = e.target.value;
-                          setProductField("unit_measure", selected);
-
-                          if (selected === "UN" && productForm.quantity) {
-                            const n = Number(productForm.quantity);
-
-                            if (Number.isFinite(n)) {
-                              setProductField("quantity", String(Math.trunc(n)));
-                            }
-                          }
-                        }}
-                        disabled={loading}
-                      >
-                        <option value="UN">UN</option>
-                        <option value="KG">KG</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
-                    <button type="submit" style={btnPrimary} disabled={loading}>
+                  <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+                    <button style={btnPrimary} disabled={loading}>
                       {isEditingProduct ? "Salvar alterações" : "Salvar"}
                     </button>
 
@@ -1976,27 +2182,27 @@ export default function App() {
                       Limpar
                     </button>
                   </div>
-
-                  <div style={hint}>
-                    Dica: clique em <b>Editar</b> na tabela para preencher o
-                    formulário.
-                  </div>
-
-                  {productMsg.text && (
-                    <div style={getMessageBox(productMsg.type)}>
-                      {productMsg.text}
-                    </div>
-                  )}
                 </form>
-              </div>
 
-              <div style={listCard}>
+                <p style={hint}>
+                  Para UN, a quantidade deve ser inteira. Para KG, pode ter casas
+                  decimais.
+                </p>
+
+                {productMsg.text && (
+                  <div style={getMessageBox(productMsg.type)}>
+                    {productMsg.text}
+                  </div>
+                )}
+              </section>
+
+              <section style={listCard}>
                 <div style={topRow}>
-                  <div style={cardTitle}>Lista de produtos</div>
+                  <h2 style={cardTitle}>Lista de produtos</h2>
 
                   <input
                     style={search}
-                    placeholder="Buscar por EAN-13, nome, descrição, preço ou estoque..."
+                    placeholder="Buscar por EAN, nome ou descrição..."
                     value={productQuery}
                     onChange={(e) => setProductQuery(e.target.value)}
                     disabled={loading}
@@ -2012,62 +2218,205 @@ export default function App() {
                         <th style={th}>Descrição</th>
                         <th style={th}>Preço</th>
                         <th style={th}>Estoque</th>
-                        <th style={th}>Cadastrado em</th>
+                        <th style={th}>Cadastro</th>
                         <th style={{ ...th, textAlign: "right" }}>Ações</th>
                       </tr>
                     </thead>
 
                     <tbody>
-                      {filteredProducts.map((p) => (
-                        <tr key={p.id}>
-                          <td style={td}>{p.ean13 || "-"}</td>
-                          <td style={td}>{p.name}</td>
-                          <td style={td}>{p.description || "-"}</td>
-                          <td style={td}>{formatMoneyPtBr(p.price)}</td>
-                          <td style={td}>
-                            {formatStock(p.quantity, p.unit_measure)}
-                          </td>
-                          <td style={td}>{formatDatePtBr(p.created_at)}</td>
-
-                          <td style={{ ...td, textAlign: "right" }}>
-                            <div style={actions}>
-                              <button
-                                type="button"
-                                style={actionBtn("edit")}
-                                onClick={() => startEditProduct(p)}
-                                disabled={loading}
-                              >
-                                Editar
-                              </button>
-
-                              <button
-                                type="button"
-                                style={actionBtn("delete")}
-                                onClick={() => onDeleteProduct(p.id)}
-                                disabled={loading}
-                              >
-                                Excluir
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {filteredProducts.length === 0 && (
+                      {filteredProducts.length === 0 ? (
                         <tr>
                           <td style={emptyTd} colSpan={7}>
                             Nenhum produto cadastrado ainda.
                           </td>
                         </tr>
+                      ) : (
+                        filteredProducts.map((p) => (
+                          <tr key={p.id}>
+                            <td style={td}>{p.ean13}</td>
+                            <td style={td}>{p.name}</td>
+                            <td style={td}>{p.description || "-"}</td>
+                            <td style={td}>{formatMoneyPtBr(p.price)}</td>
+                            <td style={td}>
+                              {formatStock(p.quantity, p.unit_measure)}
+                            </td>
+                            <td style={td}>{formatDatePtBr(p.created_at)}</td>
+                            <td style={td}>
+                              <div style={actions}>
+                                <button
+                                  style={actionBtn("edit")}
+                                  onClick={() => startEditProduct(p)}
+                                  disabled={loading}
+                                >
+                                  Editar
+                                </button>
+
+                                <button
+                                  style={actionBtn("delete")}
+                                  onClick={() => onDeleteProduct(p.id)}
+                                  disabled={loading}
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
                       )}
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === "suppliers" && (
+            <div style={sectionGrid}>
+              <section style={formCard}>
+                <h2 style={cardTitle}>Cadastro de fornecedores</h2>
+
+                <form onSubmit={onSubmitSupplier}>
+                  <label style={label}>Nome *</label>
+                  <input
+                    style={input}
+                    value={supplierForm.name}
+                    onChange={(e) => setSupplierField("name", e.target.value)}
+                    disabled={loading}
+                    placeholder="Ex: Distribuidora Central"
+                  />
+
+                  <label style={label}>E-mail *</label>
+                  <input
+                    style={input}
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierField("email", e.target.value)}
+                    disabled={loading}
+                    placeholder="fornecedor@email.com"
+                  />
+
+                  <label style={label}>Telefone (10 ou 11 dígitos)</label>
+                  <input
+                    style={input}
+                    value={supplierForm.phone}
+                    onChange={(e) =>
+                      setSupplierField("phone", e.target.value.replace(/\D/g, ""))
+                    }
+                    disabled={loading}
+                    placeholder="11999999999"
+                  />
+
+                  <label style={label}>CNPJ (14 dígitos)</label>
+                  <input
+                    style={input}
+                    value={supplierForm.cnpj}
+                    onChange={(e) =>
+                      setSupplierField("cnpj", e.target.value.replace(/\D/g, ""))
+                    }
+                    disabled={loading}
+                    placeholder="12345678000199"
+                  />
+
+                  <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+                    <button style={btnPrimary} disabled={loading}>
+                      {isEditingSupplier ? "Salvar alterações" : "Salvar"}
+                    </button>
+
+                    <button
+                      type="button"
+                      style={btnSecondary}
+                      onClick={clearSupplierForm}
+                      disabled={loading}
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                </form>
+
+                <p style={hint}>
+                  Dica: o CNPJ não é obrigatório, mas se preenchido precisa ter 14
+                  dígitos.
+                </p>
+
+                {supplierMsg.text && (
+                  <div style={getMessageBox(supplierMsg.type)}>
+                    {supplierMsg.text}
+                  </div>
+                )}
+              </section>
+
+              <section style={listCard}>
+                <div style={topRow}>
+                  <h2 style={cardTitle}>Lista de fornecedores</h2>
+
+                  <input
+                    style={search}
+                    placeholder="Buscar por nome, e-mail, telefone ou CNPJ..."
+                    value={supplierQuery}
+                    onChange={(e) => setSupplierQuery(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+
+                <div style={tableWrap}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Nome</th>
+                        <th style={th}>E-mail</th>
+                        <th style={th}>Telefone</th>
+                        <th style={th}>CNPJ</th>
+                        <th style={th}>Cadastro</th>
+                        <th style={{ ...th, textAlign: "right" }}>Ações</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {filteredSuppliers.length === 0 ? (
+                        <tr>
+                          <td style={emptyTd} colSpan={6}>
+                            Nenhum fornecedor cadastrado ainda.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSuppliers.map((supplier) => (
+                          <tr key={supplier.id}>
+                            <td style={td}>{supplier.name}</td>
+                            <td style={td}>{supplier.email}</td>
+                            <td style={td}>{supplier.phone || "-"}</td>
+                            <td style={td}>{formatCnpj(supplier.cnpj)}</td>
+                            <td style={td}>
+                              {formatDatePtBr(supplier.created_at)}
+                            </td>
+                            <td style={td}>
+                              <div style={actions}>
+                                <button
+                                  style={actionBtn("edit")}
+                                  onClick={() => startEditSupplier(supplier)}
+                                  disabled={loading}
+                                >
+                                  Editar
+                                </button>
+
+                                <button
+                                  style={actionBtn("delete")}
+                                  onClick={() => onDeleteSupplier(supplier.id)}
+                                  disabled={loading}
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }

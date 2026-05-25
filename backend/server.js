@@ -39,7 +39,6 @@ function isValidPassword(password) {
 
 function cleanPhone(phone) {
   if (phone === undefined || phone === null) return null;
-
   const digits = String(phone).replace(/\D/g, "");
   return digits.length ? digits : null;
 }
@@ -47,6 +46,25 @@ function cleanPhone(phone) {
 function validatePhone(digitsOrNull) {
   if (!digitsOrNull) return true;
   return digitsOrNull.length === 10 || digitsOrNull.length === 11;
+}
+
+function cleanCnpj(cnpj) {
+  if (cnpj === undefined || cnpj === null) return null;
+  const digits = String(cnpj).replace(/\D/g, "");
+  return digits.length ? digits : null;
+}
+
+function validateCnpj(digitsOrNull) {
+  if (!digitsOrNull) return true;
+
+  if (digitsOrNull.length !== 14) {
+    return false;
+  }
+
+  // Valida CNPJ no formato de matriz: XX.XXX.XXX/0001-XX
+  const establishmentCode = digitsOrNull.slice(8, 12);
+
+  return establishmentCode === "0001";
 }
 
 function isValidProductName(name) {
@@ -124,9 +142,7 @@ app.get("/health", async (req, res) => {
   }
 });
 
-/* =========================
- AUTH
-========================= */
+/* ========================= AUTH ========================= */
 
 app.post("/auth/register", async (req, res) => {
   let { name, email, password } = req.body;
@@ -240,9 +256,7 @@ app.post("/auth/login", async (req, res) => {
   }
 });
 
-/* =========================
- USERS
-========================= */
+/* ========================= USERS ========================= */
 
 app.get("/users", async (_req, res) => {
   try {
@@ -378,9 +392,7 @@ app.delete("/users/:id", async (req, res) => {
   }
 });
 
-/* =========================
- CLIENTS
-========================= */
+/* ========================= CLIENTS ========================= */
 
 app.get("/clients", async (_req, res) => {
   try {
@@ -552,9 +564,197 @@ app.delete("/clients/:id", async (req, res) => {
   }
 });
 
-/* =========================
- PRODUCTS
-========================= */
+/* ========================= SUPPLIERS ========================= */
+
+app.get("/suppliers", async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, email, phone, cnpj, created_at
+       FROM suppliers
+       ORDER BY id DESC`
+    );
+
+    res.json(result.rows);
+  } catch (e) {
+    console.error("ERRO NO GET /suppliers:", e);
+
+    res.status(500).json({
+      error: "Erro ao listar fornecedores.",
+      details: String(e),
+    });
+  }
+});
+
+app.post("/suppliers", async (req, res) => {
+  let { name, email, phone, cnpj } = req.body;
+
+  const cleanName = String(name ?? "").trim();
+  const cleanEmail = String(email ?? "").trim().toLowerCase();
+  const phoneDigits = cleanPhone(phone);
+  const cnpjDigits = cleanCnpj(cnpj);
+
+  if (!cleanName || !cleanEmail) {
+    return res.status(400).json({
+      error: "Preencha nome e e-mail.",
+    });
+  }
+
+  if (!isValidName(cleanName)) {
+    return res.status(400).json({
+      error: "O nome deve conter apenas letras.",
+    });
+  }
+
+  if (!isValidEmail(cleanEmail)) {
+    return res.status(400).json({
+      error: "Digite um e-mail válido, exemplo exemplo@dominio.com",
+    });
+  }
+
+  if (!validatePhone(phoneDigits)) {
+    return res.status(400).json({
+      error: "Telefone deve ter 10 ou 11 dígitos.",
+    });
+  }
+
+  if (!validateCnpj(cnpjDigits)) {
+    return res.status(400).json({
+      error:
+        "CNPJ deve ter 14 dígitos e estar no formato de matriz: XX.XXX.XXX/0001-XX.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO suppliers (name, email, phone, cnpj)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, email, phone, cnpj, created_at`,
+      [cleanName, cleanEmail, phoneDigits, cnpjDigits]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (e) {
+    console.error("ERRO NO POST /suppliers:", e);
+
+    if (String(e).includes("duplicate key")) {
+      return res.status(409).json({
+        error: "Fornecedor, e-mail ou CNPJ já cadastrado.",
+      });
+    }
+
+    res.status(500).json({
+      error: "Erro ao cadastrar fornecedor.",
+      details: String(e),
+    });
+  }
+});
+
+app.put("/suppliers/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  let { name, email, phone, cnpj } = req.body;
+
+  const cleanName = String(name ?? "").trim();
+  const cleanEmail = String(email ?? "").trim().toLowerCase();
+  const phoneDigits = cleanPhone(phone);
+  const cnpjDigits = cleanCnpj(cnpj);
+
+  if (!id) {
+    return res.status(400).json({ error: "ID inválido." });
+  }
+
+  if (!cleanName || !cleanEmail) {
+    return res.status(400).json({
+      error: "Preencha nome e e-mail.",
+    });
+  }
+
+  if (!isValidName(cleanName)) {
+    return res.status(400).json({
+      error: "O nome deve conter apenas letras.",
+    });
+  }
+
+  if (!isValidEmail(cleanEmail)) {
+    return res.status(400).json({
+      error: "Digite um e-mail válido, exemplo exemplo@dominio.com",
+    });
+  }
+
+  if (!validatePhone(phoneDigits)) {
+    return res.status(400).json({
+      error: "Telefone deve ter 10 ou 11 dígitos.",
+    });
+  }
+
+  if (!validateCnpj(cnpjDigits)) {
+    return res.status(400).json({
+      error:
+        "CNPJ deve ter 14 dígitos e estar no formato de matriz: XX.XXX.XXX/0001-XX.",
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE suppliers
+       SET name = $1, email = $2, phone = $3, cnpj = $4
+       WHERE id = $5
+       RETURNING id, name, email, phone, cnpj, created_at`,
+      [cleanName, cleanEmail, phoneDigits, cnpjDigits, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: "Fornecedor não encontrado.",
+      });
+    }
+
+    res.json(result.rows[0]);
+  } catch (e) {
+    console.error("ERRO NO PUT /suppliers/:id:", e);
+
+    if (String(e).includes("duplicate key")) {
+      return res.status(409).json({
+        error: "Fornecedor, e-mail ou CNPJ já cadastrado.",
+      });
+    }
+
+    res.status(500).json({
+      error: "Erro ao editar fornecedor.",
+      details: String(e),
+    });
+  }
+});
+
+app.delete("/suppliers/:id", async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!id) {
+    return res.status(400).json({ error: "ID inválido." });
+  }
+
+  try {
+    const result = await pool.query("DELETE FROM suppliers WHERE id = $1", [
+      id,
+    ]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: "Fornecedor não encontrado.",
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("ERRO NO DELETE /suppliers/:id:", e);
+
+    res.status(500).json({
+      error: "Erro ao excluir fornecedor.",
+      details: String(e),
+    });
+  }
+});
+
+/* ========================= PRODUCTS ========================= */
 
 app.get("/products", async (_req, res) => {
   try {
@@ -713,12 +913,7 @@ app.put("/products/:id", async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE products
-       SET ean13 = $1,
-           name = $2,
-           description = $3,
-           price = $4,
-           quantity = $5,
-           unit_measure = $6
+       SET ean13 = $1, name = $2, description = $3, price = $4, quantity = $5, unit_measure = $6
        WHERE id = $7
        RETURNING id, ean13, name, description, price, quantity, unit_measure, created_at`,
       [
@@ -763,7 +958,9 @@ app.delete("/products/:id", async (req, res) => {
   }
 
   try {
-    const result = await pool.query("DELETE FROM products WHERE id = $1", [id]);
+    const result = await pool.query("DELETE FROM products WHERE id = $1", [
+      id,
+    ]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({
